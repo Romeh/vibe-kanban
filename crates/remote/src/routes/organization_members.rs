@@ -670,7 +670,7 @@ pub(crate) async fn ensure_issue_access(
             ErrorResponse::new(StatusCode::INTERNAL_SERVER_ERROR, "internal server error")
         })?
         .ok_or_else(|| {
-            warn!(
+            tracing::debug!(
                 %issue_id,
                 %user_id,
                 "issue not found for access check"

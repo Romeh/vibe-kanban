@@ -35,6 +35,7 @@ interface GitOperationsProps {
   selectedBranch: string | null;
   layout?: 'horizontal' | 'vertical';
   issueIdentifier?: string;
+  jiraIssueKey?: string;
 }
 
 export type GitOperationsInputs = Omit<GitOperationsProps, 'selectedAttempt'>;
@@ -47,6 +48,7 @@ function GitOperations({
   selectedBranch,
   layout = 'horizontal',
   issueIdentifier,
+  jiraIssueKey,
 }: GitOperationsProps) {
   const { t } = useTranslation('tasks');
 
@@ -253,6 +255,7 @@ function GitOperations({
       repoId: getSelectedRepoId(),
       targetBranch: getSelectedRepoStatus()?.target_branch_name,
       issueIdentifier,
+      jiraIssueKey,
     });
   };
 

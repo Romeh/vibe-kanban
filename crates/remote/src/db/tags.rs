@@ -20,6 +20,26 @@ pub const DEFAULT_TAGS: &[(&str, &str)] = &[
     ("enhancement", "181 72% 78%"),
 ];
 
+/// Internal row type with `FromRow` for runtime queries.
+#[derive(sqlx::FromRow)]
+struct TagRow {
+    id: Uuid,
+    project_id: Uuid,
+    name: String,
+    color: String,
+}
+
+impl From<TagRow> for Tag {
+    fn from(row: TagRow) -> Self {
+        Tag {
+            id: row.id,
+            project_id: row.project_id,
+            name: row.name,
+            color: row.color,
+        }
+    }
+}
+
 pub struct TagRepository;
 
 impl TagRepository {
@@ -126,6 +146,41 @@ impl TagRepository {
         tx.commit().await?;
 
         Ok(DeleteResponse { txid })
+    }
+
+    /// Find an existing tag by name (case-insensitive) or create one with a default color.
+    /// Used during Jira import to map Jira labels → VK tags.
+    pub async fn find_or_create_by_name(
+        pool: &PgPool,
+        project_id: Uuid,
+        name: &str,
+    ) -> Result<Tag, TagError> {
+        // Try to find existing tag (case-insensitive)
+        let existing: Option<TagRow> = sqlx::query_as(
+            "SELECT id, project_id, name, color FROM tags WHERE project_id = $1 AND LOWER(name) = LOWER($2)",
+        )
+        .bind(project_id)
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(row) = existing {
+            return Ok(row.into());
+        }
+
+        // Create new tag with a neutral gray color
+        let id = Uuid::new_v4();
+        let row: TagRow = sqlx::query_as(
+            "INSERT INTO tags (id, project_id, name, color) VALUES ($1, $2, $3, $4) RETURNING id, project_id, name, color",
+        )
+        .bind(id)
+        .bind(project_id)
+        .bind(name)
+        .bind("210 10% 58%")
+        .fetch_one(pool)
+        .await?;
+
+        Ok(row.into())
     }
 
     pub async fn list_by_project(pool: &PgPool, project_id: Uuid) -> Result<Vec<Tag>, TagError> {

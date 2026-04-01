@@ -16,6 +16,7 @@ import {
   TrashIcon,
   PaperclipIcon,
   ImageIcon,
+  ArrowsClockwiseIcon,
 } from '@phosphor-icons/react';
 import {
   IssueTagsRow,
@@ -136,6 +137,10 @@ export interface KanbanIssuePanelProps {
   // More actions callback (edit mode only) - opens command bar with issue actions
   onMoreActions?: () => void;
 
+  // Sync to Jira callback (edit mode, Jira-linked issues only)
+  onSyncToJira?: () => void;
+  isSyncingToJira?: boolean;
+
   // Image attachment upload
   onPasteFiles?: (files: File[]) => void;
   localAttachments?: LocalAttachmentMetadata[];
@@ -154,6 +159,7 @@ export interface KanbanIssuePanelProps {
   renderRelationshipsSection?: (issueId: string) => ReactNode;
   renderSubIssuesSection?: (issueId: string) => ReactNode;
   renderCommentsSection?: (issueId: string) => ReactNode;
+  renderJiraSection?: (issueId: string) => ReactNode;
 }
 
 export function KanbanIssuePanel({
@@ -183,6 +189,8 @@ export function KanbanIssuePanel({
   titleInputRef,
   onCopyLink,
   onMoreActions,
+  onSyncToJira,
+  isSyncingToJira,
   onPasteFiles,
   localAttachments,
   dropzoneProps,
@@ -194,6 +202,7 @@ export function KanbanIssuePanel({
   renderRelationshipsSection,
   renderSubIssuesSection,
   renderCommentsSection,
+  renderJiraSection,
 }: KanbanIssuePanelProps) {
   const { t } = useTranslation('common');
   const isCreateMode = mode === 'create';
@@ -274,6 +283,21 @@ export function KanbanIssuePanel({
           )}
         </div>
         <div className="flex items-center gap-half">
+          {!isCreateMode && onSyncToJira && (
+            <button
+              type="button"
+              onClick={onSyncToJira}
+              disabled={isSyncingToJira}
+              className={cn(
+                'p-half rounded-sm text-low hover:text-normal hover:bg-panel transition-colors',
+                isSyncingToJira && 'animate-spin'
+              )}
+              aria-label={t('kanban.syncToJira')}
+              title={t('kanban.syncToJira')}
+            >
+              <ArrowsClockwiseIcon className="size-icon-sm" weight="bold" />
+            </button>
+          )}
           {!isCreateMode && onMoreActions && (
             <button
               type="button"
@@ -541,6 +565,11 @@ export function KanbanIssuePanel({
         {/* Comments Section (Edit mode only) */}
         {!isCreateMode && issueId && renderCommentsSection && (
           <div className="border-t">{renderCommentsSection(issueId)}</div>
+        )}
+
+        {/* Jira Section (Edit mode, Jira-linked issues only) */}
+        {!isCreateMode && issueId && renderJiraSection && (
+          <div className="border-t">{renderJiraSection(issueId)}</div>
         )}
       </div>
     </div>

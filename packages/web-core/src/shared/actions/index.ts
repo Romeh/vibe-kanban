@@ -864,12 +864,24 @@ export const Actions = {
 
       // Resolve vibe-kanban identifier from remote workspace + issue
       let issueIdentifier: string | undefined;
+      let jiraIssueKey: string | undefined;
       const remoteWs = ctx.remoteWorkspaces.find(
         (w) => w.local_workspace_id === workspaceId
       );
       if (remoteWs?.issue_id && ctx.projectMutations?.getIssue) {
         const issue = ctx.projectMutations.getIssue(remoteWs.issue_id);
         issueIdentifier = issue?.simple_id || remoteWs.issue_id;
+        // Extract Jira issue key for PR title prefix
+        const meta = issue?.extension_metadata;
+        if (
+          meta &&
+          typeof meta === 'object' &&
+          !Array.isArray(meta) &&
+          'jira' in meta
+        ) {
+          const jiraMeta = meta.jira as { issue_key?: string } | undefined;
+          jiraIssueKey = jiraMeta?.issue_key;
+        }
       }
 
       const result = await CreatePRDialog.show({
@@ -877,6 +889,7 @@ export const Actions = {
         repoId,
         targetBranch: repo?.target_branch,
         issueIdentifier,
+        jiraIssueKey,
       });
 
       if (!result.success && result.error) {

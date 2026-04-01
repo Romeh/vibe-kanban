@@ -31,6 +31,8 @@ use utils::response::ApiResponse;
 use workspace_manager::WorkspaceError as WorkspaceManagerError;
 use worktree_manager::WorktreeError;
 
+use crate::crypto::CryptoError;
+
 #[derive(Debug, Error, ts_rs::TS)]
 #[ts(type = "string")]
 pub enum ApiError {
@@ -90,6 +92,10 @@ pub enum ApiError {
     Pty(#[from] PtyError),
     #[error(transparent)]
     Migration(#[from] MigrationError),
+    #[error("Jira error: {0}")]
+    Jira(String),
+    #[error("Encryption error: {0}")]
+    Crypto(#[from] CryptoError),
     #[error(transparent)]
     WebRtc(#[from] WebRtcError),
 }
@@ -97,6 +103,18 @@ pub enum ApiError {
 impl From<&'static str> for ApiError {
     fn from(msg: &'static str) -> Self {
         ApiError::BadRequest(msg.to_string())
+    }
+}
+
+impl From<jira_client::JiraError> for ApiError {
+    fn from(err: jira_client::JiraError) -> Self {
+        ApiError::Jira(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for ApiError {
+    fn from(err: serde_json::Error) -> Self {
+        ApiError::BadRequest(format!("JSON error: {}", err))
     }
 }
 
@@ -553,6 +571,18 @@ impl IntoResponse for ApiError {
                 }
                 WebRtcError::SerializeMessage(_) => ErrorInfo::internal("WebRtcError"),
             },
+            ApiError::Jira(msg) => {
+                if msg.contains("Authentication failed") || msg.contains("AuthFailed") {
+                    ErrorInfo::with_status(StatusCode::UNAUTHORIZED, "JiraError", msg.clone())
+                } else if msg.contains("Not configured") || msg.contains("No Jira connection") {
+                    ErrorInfo::bad_request("JiraError", msg.clone())
+                } else if msg.contains("Rate limited") {
+                    ErrorInfo::with_status(StatusCode::TOO_MANY_REQUESTS, "JiraError", msg.clone())
+                } else {
+                    ErrorInfo::with_status(StatusCode::BAD_GATEWAY, "JiraError", msg.clone())
+                }
+            }
+            ApiError::Crypto(_) => ErrorInfo::internal("CryptoError"),
         };
 
         // Log internal errors so they are visible in server output.

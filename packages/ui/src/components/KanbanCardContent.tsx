@@ -137,6 +137,9 @@ export type KanbanCardContentProps<TTag extends KanbanTag = KanbanTag> = {
   onAssigneeClick?: (e: MouseEvent) => void;
   onMoreActionsClick?: () => void;
   tagEditProps?: TagEditProps<TTag>;
+  jiraIssueKey?: string | null;
+  jiraIssueUrl?: string | null;
+  jiraLastSyncedAt?: string | null;
   isMobile?: boolean;
 };
 
@@ -156,6 +159,9 @@ export function KanbanCardContent<TTag extends KanbanTag = KanbanTag>({
   onAssigneeClick,
   onMoreActionsClick,
   tagEditProps,
+  jiraIssueKey,
+  jiraIssueUrl,
+  jiraLastSyncedAt,
   isMobile,
 }: KanbanCardContentProps<TTag>) {
   const { t } = useTranslation('common');
@@ -212,6 +218,24 @@ export function KanbanCardContent<TTag extends KanbanTag = KanbanTag>({
           <span className="font-ibm-plex-mono text-sm text-low truncate">
             {displayId}
           </span>
+          {jiraIssueKey && (
+            <a
+              href={jiraIssueUrl ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-0.5 px-1 py-0.5 text-[10px] font-medium bg-[#0052CC]/10 text-[#0052CC] dark:bg-[#4C9AFF]/15 dark:text-[#4C9AFF] rounded hover:bg-[#0052CC]/20 dark:hover:bg-[#4C9AFF]/25 transition-colors"
+              title={`Jira: ${jiraIssueKey}${jiraLastSyncedAt ? ` · Synced ${new Date(jiraLastSyncedAt).toLocaleString()}` : ''}`}
+            >
+              {jiraIssueKey}
+            </a>
+          )}
+          {jiraLastSyncedAt && (
+            <span className="text-[9px] text-low" title={`Synced ${new Date(jiraLastSyncedAt).toLocaleString()}`}>
+              ✓
+            </span>
+          )}
           {isLoading && <RunningDots />}
         </div>
         {onMoreActionsClick && (

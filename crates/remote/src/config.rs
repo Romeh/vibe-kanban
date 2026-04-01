@@ -20,6 +20,7 @@ pub struct RemoteServerConfig {
     pub review_worker_base_url: Option<String>,
     pub review_disabled: bool,
     pub github_app: Option<GitHubAppConfig>,
+    pub jira_oauth: Option<OAuthProviderConfig>,
 }
 
 #[derive(Debug, Clone)]
@@ -257,6 +258,21 @@ impl RemoteServerConfig {
 
         let github_app = GitHubAppConfig::from_env()?;
 
+        let jira_oauth = match env::var("JIRA_OAUTH_CLIENT_ID") {
+            Ok(client_id) if !client_id.is_empty() => {
+                let client_secret = env::var("JIRA_OAUTH_CLIENT_SECRET")
+                    .map_err(|_| ConfigError::MissingVar("JIRA_OAUTH_CLIENT_SECRET"))?;
+                Some(OAuthProviderConfig::new(
+                    client_id,
+                    SecretString::new(client_secret.into()),
+                ))
+            }
+            _ => {
+                tracing::info!("JIRA_OAUTH_CLIENT_ID not set, Jira OAuth disabled");
+                None
+            }
+        };
+
         Ok(Self {
             database_url,
             listen_addr,
@@ -272,6 +288,7 @@ impl RemoteServerConfig {
             review_worker_base_url,
             review_disabled,
             github_app,
+            jira_oauth,
         })
     }
 }

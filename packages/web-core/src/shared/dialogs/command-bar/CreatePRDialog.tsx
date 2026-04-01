@@ -41,6 +41,7 @@ interface CreatePRDialogProps {
   repoId: string;
   targetBranch?: string;
   issueIdentifier?: string;
+  jiraIssueKey?: string;
 }
 
 export type CreatePRDialogResult = {
@@ -58,7 +59,7 @@ const appendPrTitleSuffix = (title: string): string => {
 };
 
 const CreatePRDialogImpl = create<CreatePRDialogProps>(
-  ({ attempt, repoId, targetBranch, issueIdentifier }) => {
+  ({ attempt, repoId, targetBranch, issueIdentifier, jiraIssueKey }) => {
     const modal = useModal();
     const { t } = useTranslation('tasks');
     const { isLoaded } = useAuth();
@@ -121,7 +122,8 @@ const CreatePRDialogImpl = create<CreatePRDialogProps>(
           if (firstUserMessage?.trim()) {
             const { title, description } =
               splitMessageToTitleDescription(firstUserMessage);
-            setPrTitle(appendPrTitleSuffix(title));
+            const jiraPrefix = jiraIssueKey ? `${jiraIssueKey}: ` : '';
+            setPrTitle(jiraPrefix + appendPrTitleSuffix(title));
             setPrBody(description ?? '');
             return;
           }

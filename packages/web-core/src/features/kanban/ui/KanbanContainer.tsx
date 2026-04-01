@@ -30,6 +30,7 @@ import {
 } from '../model/hooks/useKanbanFilters';
 import {
   bulkUpdateIssues,
+  getRemoteApiUrl,
   type BulkUpdateIssueItem,
 } from '@/shared/lib/remoteApi';
 import { PlusIcon, DotsThreeIcon } from '@phosphor-icons/react';
@@ -62,6 +63,10 @@ import { ViewNavTabs } from '@vibe/ui/components/ViewNavTabs';
 import { IssueListView } from '@vibe/ui/components/IssueListView';
 import { CommandBarDialog } from '@/shared/dialogs/command-bar/CommandBarDialog';
 import { KanbanFiltersDialog } from '@/shared/dialogs/kanban/KanbanFiltersDialog';
+import { JiraImportDialog } from '@/shared/dialogs/kanban/JiraImportDialog';
+import { useJiraConnection } from '@/shared/hooks/useJira';
+import type { JiraExtensionMetadata } from '@/shared/types/jira';
+import type { JsonValue } from 'shared/remote-types';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +78,19 @@ import type { IssuePriority } from 'shared/remote-types';
 import { useIssueMultiSelect } from '@/shared/hooks/useIssueMultiSelect';
 import { useIssueSelectionStore } from '@/shared/stores/useIssueSelectionStore';
 import { BulkActionBarContainer } from './BulkActionBarContainer';
+
+/** Extract Jira metadata from an issue's extension_metadata, if present. */
+function getJiraMeta(metadata: JsonValue): JiraExtensionMetadata | undefined {
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    'jira' in metadata
+  ) {
+    return metadata.jira as JiraExtensionMetadata | undefined;
+  }
+  return undefined;
+}
 
 const areStringSetsEqual = (left: string[], right: string[]): boolean => {
   if (left.length !== right.length) {
@@ -151,12 +169,16 @@ export function KanbanContainer() {
   } = useProjectContext();
 
   const {
+    organizationId,
     projects,
     membersWithProfilesById,
     isLoading: orgLoading,
   } = useOrgContext();
   const { activeWorkspaces } = useWorkspaceContext();
   const { userId } = useAuth();
+
+  // Jira integration — check if connected
+  const { data: jiraConnection } = useJiraConnection(organizationId);
 
   // Get project name by finding the project matching current projectId
   const projectName = projects.find((p) => p.id === projectId)?.name ?? '';
@@ -234,13 +256,17 @@ export function KanbanContainer() {
     () => resolveKanbanProjectState(projectViewSelection),
     [projectViewSelection]
   );
+  const isLocalMode = !getRemoteApiUrl();
   const {
-    activeViewId,
+    activeViewId: resolvedViewId,
     filters: defaultKanbanFilters,
     showSubIssues: defaultShowSubIssues,
     showWorkspaces: defaultShowWorkspaces,
     hideBlocked: defaultHideBlocked,
   } = resolvedProjectState;
+  const activeViewId = isLocalMode
+    ? KANBAN_PROJECT_VIEW_IDS.PERSONAL
+    : resolvedViewId;
   const projectViewPreferences = projectViewPreferencesById?.[activeViewId];
   const kanbanFilters = projectViewPreferences?.filters ?? defaultKanbanFilters;
   const showSubIssues =
@@ -822,6 +848,19 @@ export function KanbanContainer() {
     [createAssigneeIds, defaultCreateStatusId, startCreate]
   );
 
+  // Jira import: show dialog if connected
+  const handleImportFromJira = useCallback(() => {
+    if (!jiraConnection?.connected || !jiraConnection.site_url) return;
+    const defaultStatusId = statuses.find((s) => !s.hidden)?.id;
+    if (!defaultStatusId) return;
+    JiraImportDialog.show({
+      organizationId,
+      projectId,
+      statusId: defaultStatusId,
+      siteUrl: jiraConnection.site_url,
+    });
+  }, [jiraConnection, organizationId, projectId, statuses]);
+
   // Inline editing callbacks for kanban cards
   // When multi-select is active, apply to all selected issues
   const handleCardPriorityClick = useCallback(
@@ -967,6 +1006,10 @@ export function KanbanContainer() {
             onHideBlockedChange={setHideBlocked}
             onClearFilters={clearKanbanFilters}
             onCreateIssue={handleAddTask}
+            onImportFromJira={
+              jiraConnection?.connected ? handleImportFromJira : undefined
+            }
+            hideViewToggle={isLocalMode}
             shouldAnimateCreateButton={shouldAnimateCreateButton}
             renderFiltersDialog={(props) => <KanbanFiltersDialog {...props} />}
             isMobile={isMobile}
@@ -1054,6 +1097,18 @@ export function KanbanContainer() {
                                 issuesById
                               )}
                               isSubIssue={!!issue.parent_issue_id}
+                              jiraIssueKey={
+                                getJiraMeta(issue.extension_metadata)
+                                  ?.issue_key ?? null
+                              }
+                              jiraIssueUrl={
+                                getJiraMeta(issue.extension_metadata)
+                                  ?.issue_url ?? null
+                              }
+                              jiraLastSyncedAt={
+                                getJiraMeta(issue.extension_metadata)
+                                  ?.last_synced_at ?? null
+                              }
                               isMobile={isMobile}
                               onPriorityClick={(e) => {
                                 e.stopPropagation();

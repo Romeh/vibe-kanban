@@ -14,6 +14,16 @@ use api_types::{
     UpdateNotificationRequest, UpdateProjectRequest, UpdateProjectStatusRequest, UpdateTagRequest,
     User, UserData, Workspace,
 };
+use jira_client::{
+    AtlassianSite, JiraAuthPayload, JiraCommentView, JiraConnectRequest, JiraConnectionInfo,
+    JiraImportRequest, JiraOAuthAuthorizeResponse, JiraProject, JiraSearchRequest,
+    JiraSearchResult, JiraStatusMapping, JiraStatusMappingDeleteRequest, JiraStatusMappingRequest,
+    JiraStatusView,
+    types::{
+        JiraComment, JiraIssue, JiraIssueFields, JiraIssueType, JiraPriority, JiraStatus,
+        JiraStatusCategory, JiraTransition, JiraUser,
+    },
+};
 use relay_types::{CreateRemoteSessionResponse, ListRelayHostsResponse, RelayHost};
 use remote::{
     routes::{
@@ -134,6 +144,30 @@ fn export_shapes() -> String {
         CommitAttachmentsRequest::decl(),
         CommitAttachmentsResponse::decl(),
         AttachmentUrlResponse::decl(),
+        // Jira integration types
+        JiraProject::decl(),
+        JiraIssue::decl(),
+        JiraIssueFields::decl(),
+        JiraStatus::decl(),
+        JiraStatusCategory::decl(),
+        JiraPriority::decl(),
+        JiraIssueType::decl(),
+        JiraUser::decl(),
+        JiraTransition::decl(),
+        JiraSearchResult::decl(),
+        JiraConnectRequest::decl(),
+        JiraAuthPayload::decl(),
+        JiraImportRequest::decl(),
+        JiraConnectionInfo::decl(),
+        JiraSearchRequest::decl(),
+        AtlassianSite::decl(),
+        JiraOAuthAuthorizeResponse::decl(),
+        JiraComment::decl(),
+        JiraCommentView::decl(),
+        JiraStatusMapping::decl(),
+        JiraStatusMappingRequest::decl(),
+        JiraStatusMappingDeleteRequest::decl(),
+        JiraStatusView::decl(),
     ];
 
     for decl in type_decls {

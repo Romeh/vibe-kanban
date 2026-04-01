@@ -177,6 +177,36 @@ export type CommitAttachmentsResponse = { attachments: Array<AttachmentWithBlob>
 
 export type AttachmentUrlResponse = { url: string, };
 
+export type JiraProject = { id: string, key: string, name: string, projectTypeKey: string | null, };
+
+export type JiraIssue = { id: string, key: string, self: string, fields: JiraIssueFields, };
+
+export type JiraIssueFields = { summary: string, description: JsonValue | null, status: JiraStatus | null, priority: JiraPriority | null, issuetype: JiraIssueType | null, assignee: JiraUser | null, reporter: JiraUser | null, created: string | null, updated: string | null, labels: Array<string>, };
+
+export type JiraStatus = { id: string, name: string, statusCategory: JiraStatusCategory | null, };
+
+export type JiraStatusCategory = { id: bigint, key: string, name: string, };
+
+export type JiraPriority = { id: string, name: string, };
+
+export type JiraIssueType = { id: string, name: string, subtask: boolean, };
+
+export type JiraUser = { accountId: string, displayName: string, };
+
+export type JiraTransition = { id: string, name: string, to: JiraStatus, };
+
+export type JiraSearchResult = { startAt: bigint | null, maxResults: bigint | null, total: bigint | null, issues: Array<JiraIssue>, isLast: boolean | null, };
+
+export type JiraConnectRequest = { site_url: string, auth: JiraAuthPayload, };
+
+export type JiraAuthPayload = { "type": "o_auth2", code: string, redirect_uri: string, } | { "type": "api_token", email: string, token: string, };
+
+export type JiraImportRequest = { project_id: string, status_id: string, issue_keys: Array<string>, };
+
+export type JiraConnectionInfo = { connected: boolean, site_url: string | null, auth_type: string | null, connected_at: string | null, };
+
+export type JiraSearchRequest = { query: string, project_key: string | null, max_results: number | null, };
+
 // Shape definition interface
 export interface ShapeDefinition<T> {
   readonly table: string;

@@ -51,6 +51,8 @@ fn configure_user(repo_path: &Path, name: &str, email: &str) {
     let mut cfg = repo.config().unwrap();
     cfg.set_str("user.name", name).unwrap();
     cfg.set_str("user.email", email).unwrap();
+    // Disable GPG signing so CLI commits work in test environments
+    cfg.set_bool("commit.gpgsign", false).unwrap();
 }
 
 fn init_repo_main(root: &TempDir) -> PathBuf {

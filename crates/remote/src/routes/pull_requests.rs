@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use super::{
     error::{ErrorResponse, db_error},
+    jira::sync_jira_status_if_linked,
     organization_members::ensure_issue_access,
 };
 use crate::{
@@ -166,6 +167,9 @@ async fn create_pull_request(
         ErrorResponse::new(StatusCode::INTERNAL_SERVER_ERROR, "internal server error")
     })?;
 
+    // Jira writeback after PR-triggered status sync.
+    spawn_jira_sync_for_issue(state.clone(), issue_id);
+
     Ok(Json(MutationResponse { data: pr, txid }))
 }
 
@@ -226,6 +230,7 @@ async fn update_pull_request(
         )
     })?;
 
+    let mut synced_issue_ids = Vec::new();
     for pull_request in &pull_requests {
         let issue_ids = PullRequestIssueRepository::issue_ids_for_pr(&mut *tx, pull_request.id)
             .await
@@ -240,6 +245,7 @@ async fn update_pull_request(
                     tracing::error!(?error, %issue_id, "failed to sync issue status after PR update");
                     ErrorResponse::new(StatusCode::INTERNAL_SERVER_ERROR, "internal server error")
                 })?;
+            synced_issue_ids.push(issue_id);
         }
     }
 
@@ -252,6 +258,11 @@ async fn update_pull_request(
         tracing::error!(?error, "failed to commit transaction");
         ErrorResponse::new(StatusCode::INTERNAL_SERVER_ERROR, "internal server error")
     })?;
+
+    // Jira writeback after PR-triggered status sync.
+    for issue_id in synced_issue_ids {
+        spawn_jira_sync_for_issue(state.clone(), issue_id);
+    }
 
     Ok(Json(MutationResponse { data: pr, txid }))
 }
@@ -365,5 +376,30 @@ async fn upsert_pull_request(
         ErrorResponse::new(StatusCode::INTERNAL_SERVER_ERROR, "internal server error")
     })?;
 
+    // Jira writeback after PR-triggered status sync.
+    spawn_jira_sync_for_issue(state.clone(), issue_id);
+
     Ok(Json(MutationResponse { data: pr, txid }))
+}
+
+/// Spawn a background task that loads an issue, resolves its current status name,
+/// and syncs to Jira if the issue has Jira metadata.
+fn spawn_jira_sync_for_issue(state: AppState, issue_id: Uuid) {
+    tokio::spawn(async move {
+        let Ok(Some(issue)) = IssueRepository::find_by_id(state.pool(), issue_id).await else {
+            return;
+        };
+        if issue.extension_metadata.get("jira").is_none() {
+            return;
+        }
+        let Ok(Some(status)) = crate::db::project_statuses::ProjectStatusRepository::find_by_id(
+            state.pool(),
+            issue.status_id,
+        )
+        .await
+        else {
+            return;
+        };
+        sync_jira_status_if_linked(&state, &issue, &status.name).await;
+    });
 }

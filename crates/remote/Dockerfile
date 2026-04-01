@@ -77,7 +77,9 @@ COPY crates/git-host/Cargo.toml crates/git-host/Cargo.toml
 COPY crates/local-deployment/Cargo.toml crates/local-deployment/Cargo.toml
 COPY crates/deployment/Cargo.toml crates/deployment/Cargo.toml
 COPY crates/review/Cargo.toml crates/review/Cargo.toml
+COPY crates/jira-client/Cargo.toml crates/jira-client/Cargo.toml
 COPY crates/api-types crates/api-types
+COPY crates/jira-client crates/jira-client
 COPY crates/relay-types crates/relay-types
 COPY crates/remote crates/remote
 COPY crates/utils crates/utils

@@ -97,6 +97,22 @@ async fn create_workspace(
             tracing::warn!(?error, "failed to sync issue from workspace creation");
         }
 
+        // Trigger Jira "In Progress" transition on first workspace creation.
+        {
+            let state_clone = state.clone();
+            tokio::spawn(async move {
+                let issue = match IssueRepository::find_by_id(state_clone.pool(), issue_id).await {
+                    Ok(Some(issue)) => issue,
+                    Ok(None) => return,
+                    Err(e) => {
+                        tracing::warn!(?e, %issue_id, "jira sync: failed to load issue for workspace creation");
+                        return;
+                    }
+                };
+                super::jira::sync_jira_status_if_linked(&state_clone, &issue, "In progress").await;
+            });
+        }
+
         if let Some(analytics) = state.analytics() {
             analytics.track(
                 ctx.user.id,

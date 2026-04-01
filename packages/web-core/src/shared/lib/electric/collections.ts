@@ -187,9 +187,12 @@ function getOrCreateSourceRuntime(sourceKey: string): SourceRuntime {
     return existing;
   }
 
+  // In local standalone mode (no remote API), skip Electric entirely and
+  // go straight to fallback polling against the local server.
+  const isLocalMode = !getRemoteApiUrl();
   const created: SourceRuntime = {
-    mode: 'electric',
-    fallbackLocked: false,
+    mode: isLocalMode ? 'fallback' : 'electric',
+    fallbackLocked: isLocalMode,
     refreshers: new Set(),
     fallbackSwitchers: new Set(),
   };

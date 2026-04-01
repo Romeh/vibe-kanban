@@ -38,6 +38,7 @@ pub mod issue_followers;
 pub mod issue_relationships;
 pub mod issue_tags;
 pub mod issues;
+mod jira;
 mod migration;
 pub mod notifications;
 mod oauth;
@@ -133,6 +134,7 @@ pub fn router(state: AppState) -> Router {
         .merge(notifications::router())
         .merge(workspaces::router())
         .merge(billing::protected_router())
+        .merge(jira::router())
         .merge(migration::router())
         .layer(middleware::from_fn_with_state(
             state.clone(),

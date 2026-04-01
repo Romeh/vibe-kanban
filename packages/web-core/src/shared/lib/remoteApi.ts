@@ -49,8 +49,37 @@ export const makeRequest = async (
   options: RequestInit = {},
   retryOn401 = true
 ): Promise<Response> => {
-  return makeAuthenticatedRequest(getRemoteApiUrl(), path, options, retryOn401);
+  const remoteUrl = getRemoteApiUrl();
+  if (!remoteUrl) {
+    // Local standalone mode: route /v1/* to local server's /api/remote/*
+    return makeLocalFallbackRequest(path, options);
+  }
+  return makeAuthenticatedRequest(remoteUrl, path, options, retryOn401);
 };
+
+async function makeLocalFallbackRequest(
+  path: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  const headers = new Headers(options.headers ?? {});
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  // Rewrite /v1/* paths to local server equivalents.
+  // Some routes live at /api/* (organizations), others at /api/remote/*.
+  // Mutation URLs use underscores (issue_tags), but routes use hyphens (issue-tags).
+  let localPath = path;
+  if (path.startsWith('/v1/organizations')) {
+    localPath = '/api' + path.slice(3); // /v1/organizations → /api/organizations
+  } else if (path.startsWith('/v1/')) {
+    // Convert underscores to hyphens in the path only (not query params).
+    const [pathPart, queryPart] = path.slice(4).split('?', 2);
+    const hyphenatedPath = pathPart.replace(/_/g, '-');
+    localPath =
+      '/api/remote/' + hyphenatedPath + (queryPart ? '?' + queryPart : '');
+  }
+  return fetch(localPath, { ...options, headers });
+}
 
 async function makeAuthenticatedRequest(
   baseUrl: string,

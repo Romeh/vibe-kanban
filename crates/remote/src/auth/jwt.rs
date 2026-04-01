@@ -262,6 +262,21 @@ impl JwtService {
         self.encrypt_data(json.as_bytes())
     }
 
+    /// Encrypt arbitrary bytes and return a base64-encoded blob.
+    /// Used by Jira credential storage and other integrations.
+    pub fn encrypt_provider_tokens_raw(&self, data: &[u8]) -> Result<Vec<u8>, JwtError> {
+        let encoded = self.encrypt_data(data)?;
+        Ok(encoded.into_bytes())
+    }
+
+    /// Decrypt a blob previously encrypted with `encrypt_provider_tokens_raw`.
+    /// Returns the decrypted data as a UTF-8 string.
+    pub fn decrypt_provider_tokens_raw(&self, encrypted: &[u8]) -> Result<String, JwtError> {
+        let encoded_str = std::str::from_utf8(encrypted).map_err(|_| JwtError::InvalidToken)?;
+        let decrypted = self.decrypt_data(encoded_str)?;
+        String::from_utf8(decrypted).map_err(|_| JwtError::InvalidToken)
+    }
+
     fn encrypt_data(&self, data: &[u8]) -> Result<String, JwtError> {
         let key_bytes = self.derive_key()?;
         let key = Key::<Aes256Gcm>::from(key_bytes);
@@ -309,5 +324,70 @@ impl JwtService {
         let mut hasher = Sha256::new();
         hasher.update(&secret_bytes);
         Ok(hasher.finalize().into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use secrecy::SecretString;
+
+    use super::*;
+
+    /// Build a JwtService with a fixed base64-encoded 32-byte secret for tests.
+    /// `derive_key()` base64-decodes the secret, so we provide a valid base64 string.
+    fn test_jwt_service() -> JwtService {
+        // base64(32 zero bytes) = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+        JwtService::new(SecretString::from(
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".to_string(),
+        ))
+    }
+
+    #[test]
+    fn test_encrypt_decrypt_roundtrip() {
+        let svc = test_jwt_service();
+        let plaintext = b"jira-oauth2-credentials-json-payload";
+        let encrypted = svc
+            .encrypt_provider_tokens_raw(plaintext)
+            .expect("encryption should succeed");
+        let decrypted = svc
+            .decrypt_provider_tokens_raw(&encrypted)
+            .expect("decryption should succeed");
+        assert_eq!(decrypted.as_bytes(), plaintext);
+    }
+
+    #[test]
+    fn test_decrypt_garbage_returns_error() {
+        let svc = test_jwt_service();
+        let result = svc.decrypt_provider_tokens_raw(b"not-valid-ciphertext");
+        assert!(result.is_err(), "garbage input should return an error");
+    }
+
+    #[test]
+    fn test_nonce_is_random_per_encryption() {
+        // Encrypting the same plaintext twice must produce different ciphertexts
+        // (because AES-256-GCM uses a random nonce each time).
+        let svc = test_jwt_service();
+        let data = b"same data every time";
+        let enc1 = svc.encrypt_provider_tokens_raw(data).unwrap();
+        let enc2 = svc.encrypt_provider_tokens_raw(data).unwrap();
+        assert_ne!(
+            enc1, enc2,
+            "two encryptions of the same data should differ (random nonce)"
+        );
+    }
+
+    #[test]
+    fn test_wrong_key_cannot_decrypt() {
+        let svc1 = test_jwt_service();
+        // A different base64 secret = different derived key
+        let svc2 = JwtService::new(SecretString::from(
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB=".to_string(),
+        ));
+        let encrypted = svc1.encrypt_provider_tokens_raw(b"secret").unwrap();
+        let result = svc2.decrypt_provider_tokens_raw(&encrypted);
+        assert!(
+            result.is_err(),
+            "data encrypted with key1 should not decrypt with key2"
+        );
     }
 }

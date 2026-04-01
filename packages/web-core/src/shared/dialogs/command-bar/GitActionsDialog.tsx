@@ -24,13 +24,18 @@ import { defineModal } from '@/shared/lib/modals';
 
 export interface GitActionsDialogProps {
   workspaceId: string;
+  jiraIssueKey?: string;
 }
 
 interface GitActionsDialogContentProps {
   attempt: WorkspaceWithSession;
+  jiraIssueKey?: string;
 }
 
-function GitActionsDialogContent({ attempt }: GitActionsDialogContentProps) {
+function GitActionsDialogContent({
+  attempt,
+  jiraIssueKey,
+}: GitActionsDialogContentProps) {
   const { t } = useTranslation('tasks');
   const { data: branchStatus, error: branchStatusError } = useBranchStatus(
     attempt.id
@@ -85,13 +90,14 @@ function GitActionsDialogContent({ attempt }: GitActionsDialogContentProps) {
         isAttemptRunning={isAttemptRunning}
         selectedBranch={getSelectedRepoStatus()?.target_branch_name ?? null}
         layout="vertical"
+        jiraIssueKey={jiraIssueKey}
       />
     </div>
   );
 }
 
 const GitActionsDialogImpl = create<GitActionsDialogProps>(
-  ({ workspaceId }) => {
+  ({ workspaceId, jiraIssueKey }) => {
     const modal = useModal();
     const { t } = useTranslation('tasks');
 
@@ -122,7 +128,10 @@ const GitActionsDialogImpl = create<GitActionsDialogProps>(
                 key={attempt.id}
                 sessionId={attempt.session?.id}
               >
-                <GitActionsDialogContent attempt={attempt} />
+                <GitActionsDialogContent
+                  attempt={attempt}
+                  jiraIssueKey={jiraIssueKey}
+                />
               </ExecutionProcessesProvider>
             </GitOperationsProvider>
           )}

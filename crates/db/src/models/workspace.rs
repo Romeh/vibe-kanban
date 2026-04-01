@@ -582,6 +582,38 @@ impl Workspace {
         Ok(workspaces)
     }
 
+    /// Link a workspace to an issue (local mode only).
+    pub async fn link_to_issue(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+        project_id: Uuid,
+        issue_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE workspaces SET issue_id = $1, project_id = $2, updated_at = datetime('now', 'subsec') WHERE id = $3",
+        )
+        .bind(issue_id)
+        .bind(project_id)
+        .bind(workspace_id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Unlink a workspace from its issue (local mode only).
+    pub async fn unlink_from_issue(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE workspaces SET issue_id = NULL, project_id = NULL, updated_at = datetime('now', 'subsec') WHERE id = $1",
+        )
+        .bind(workspace_id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Delete a workspace by ID
     pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<u64, sqlx::Error> {
         let result = sqlx::query!("DELETE FROM workspaces WHERE id = $1", id)

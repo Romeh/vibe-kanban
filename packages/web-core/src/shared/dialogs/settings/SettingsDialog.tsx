@@ -6,6 +6,7 @@ import { create, useModal } from '@ebay/nice-modal-react';
 import { defineModal } from '@/shared/lib/modals';
 
 import { cn } from '@/shared/lib/utils';
+import { getRemoteApiUrl } from '@/shared/lib/remoteApi';
 import { SettingsSection } from './settings/SettingsSection';
 import { SettingsSelect } from './settings/SettingsComponents';
 import type {
@@ -57,8 +58,15 @@ function SettingsDialogNavigation({
   const hostSections = SETTINGS_SECTION_DEFINITIONS.filter(
     (section) => section.group === 'host'
   );
+  const isLocalMode = !getRemoteApiUrl();
+  const cloudOnlySections: SettingsSectionType[] = [
+    'organizations',
+    'remote-projects',
+  ];
   const universalSections = SETTINGS_SECTION_DEFINITIONS.filter(
-    (section) => section.group === 'universal'
+    (section) =>
+      section.group === 'universal' &&
+      !(isLocalMode && cloudOnlySections.includes(section.id))
   );
   const hostOptions = availableHosts.map((host) => ({
     value: host.id,
@@ -172,7 +180,7 @@ function SettingsDialogContent({
     }
 
     if (hostsResolved && availableHosts.length === 0) {
-      return 'organizations';
+      return getRemoteApiUrl() ? 'organizations' : 'jira';
     }
 
     return 'general';

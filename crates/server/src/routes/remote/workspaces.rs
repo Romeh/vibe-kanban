@@ -21,7 +21,13 @@ async fn get_workspace_by_local_id(
     State(deployment): State<DeploymentImpl>,
     Path(local_workspace_id): Path<Uuid>,
 ) -> Result<ResponseJson<ApiResponse<Workspace>>, ApiError> {
-    let client = deployment.remote_client()?;
-    let workspace = client.get_workspace_by_local_id(local_workspace_id).await?;
-    Ok(ResponseJson(ApiResponse::success(workspace)))
+    match deployment.remote_client() {
+        Ok(client) => {
+            let workspace = client.get_workspace_by_local_id(local_workspace_id).await?;
+            Ok(ResponseJson(ApiResponse::success(workspace)))
+        }
+        Err(_) => Err(ApiError::BadRequest(
+            "Workspace not found (remote not configured)".into(),
+        )),
+    }
 }

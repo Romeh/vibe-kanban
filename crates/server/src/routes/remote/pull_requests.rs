@@ -23,9 +23,19 @@ async fn list_pull_requests(
     State(deployment): State<DeploymentImpl>,
     Query(query): Query<ListPullRequestsQuery>,
 ) -> Result<ResponseJson<ApiResponse<ListPullRequestsResponse>>, ApiError> {
-    let client = deployment.remote_client()?;
-    let response = client.list_pull_requests(query.issue_id).await?;
-    Ok(ResponseJson(ApiResponse::success(response)))
+    match deployment.remote_client() {
+        Ok(client) => {
+            let response = client.list_pull_requests(query.issue_id).await?;
+            Ok(ResponseJson(ApiResponse::success(response)))
+        }
+        Err(_) => {
+            // Local PRs are tracked differently; return empty list
+            let response = ListPullRequestsResponse {
+                pull_requests: vec![],
+            };
+            Ok(ResponseJson(ApiResponse::success(response)))
+        }
+    }
 }
 
 /// Tracks a PR in the local database so `pr_monitor` can poll for status

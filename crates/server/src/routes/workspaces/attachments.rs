@@ -118,7 +118,17 @@ pub async fn import_issue_attachments(
     State(deployment): State<DeploymentImpl>,
     axum::Json(payload): axum::Json<ImportIssueAttachmentsRequest>,
 ) -> Result<ResponseJson<ApiResponse<ImportIssueAttachmentsResponse>>, ApiError> {
-    let client = deployment.remote_client()?;
+    let client = match deployment.remote_client() {
+        Ok(c) => c,
+        Err(_) => {
+            // Local mode: no remote attachments to import
+            return Ok(ResponseJson(ApiResponse::success(
+                ImportIssueAttachmentsResponse {
+                    attachment_ids: vec![],
+                },
+            )));
+        }
+    };
     let imported_attachments =
         import_issue_attachments_from_remote(&client, deployment.file(), payload.issue_id).await?;
     let attachment_ids = imported_attachments

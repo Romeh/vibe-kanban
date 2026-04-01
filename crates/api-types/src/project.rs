@@ -16,7 +16,7 @@ pub struct Project {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CreateProjectRequest {
     /// Optional client-generated ID. If not provided, server generates one.
     /// Using client-generated IDs enables stable optimistic updates.
@@ -27,7 +27,7 @@ pub struct CreateProjectRequest {
     pub color: String,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct UpdateProjectRequest {
     #[serde(default, deserialize_with = "some_if_present")]
     pub name: Option<String>,

@@ -16,7 +16,7 @@ pub struct IssueComment {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct CreateIssueCommentRequest {
     /// Optional client-generated ID. If not provided, server generates one.
     /// Using client-generated IDs enables stable optimistic updates.
@@ -27,7 +27,7 @@ pub struct CreateIssueCommentRequest {
     pub parent_id: Option<Uuid>,
 }
 
-#[derive(Debug, Clone, Deserialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct UpdateIssueCommentRequest {
     #[serde(default, deserialize_with = "some_if_present")]
     pub message: Option<String>,
@@ -40,7 +40,7 @@ pub struct ListIssueCommentsQuery {
     pub issue_id: Uuid,
 }
 
-#[derive(Debug, Clone, Serialize, TS)]
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct ListIssueCommentsResponse {
     pub issue_comments: Vec<IssueComment>,
 }

@@ -17,6 +17,7 @@ import { useProjectWorkspaceCreateDraft } from '@/shared/hooks/useProjectWorkspa
 import WYSIWYGEditor from '@/shared/components/WYSIWYGEditor';
 import { SearchableTagDropdownContainer } from '@/shared/components/SearchableTagDropdownContainer';
 import { IssueCommentsSectionContainer } from './IssueCommentsSectionContainer';
+import { JiraIssueSectionContainer } from './JiraIssueSectionContainer';
 import { IssueSubIssuesSectionContainer } from './IssueSubIssuesSectionContainer';
 import { IssueRelationshipsSectionContainer } from './IssueRelationshipsSectionContainer';
 import { IssueWorkspacesSectionContainer } from './IssueWorkspacesSectionContainer';
@@ -63,6 +64,7 @@ import {
   useKanbanIssueComposer,
   useKanbanIssueComposerStore,
 } from '@/shared/stores/useKanbanIssueComposerStore';
+import { useJiraSyncStatus } from '@/shared/hooks/useJira';
 
 interface KanbanIssuePanelContainerProps {
   issueResolution: 'resolving' | 'ready' | 'missing' | null;
@@ -193,6 +195,33 @@ export function KanbanIssuePanelContainer({
     if (!creatorUserId) return null;
     return membersWithProfilesById.get(creatorUserId) ?? null;
   }, [membersWithProfilesById, creatorUserId]);
+
+  // Jira sync — only available when the issue has Jira metadata
+  const jiraSyncStatus = useJiraSyncStatus();
+  const hasJiraMeta = useMemo(() => {
+    let meta = selectedIssue?.extension_metadata;
+    // ElectricSQL may deliver JSONB as a string — parse if needed
+    if (typeof meta === 'string') {
+      try {
+        meta = JSON.parse(meta);
+      } catch {
+        return false;
+      }
+    }
+    return (
+      !!meta &&
+      typeof meta === 'object' &&
+      !Array.isArray(meta) &&
+      'jira' in meta
+    );
+  }, [selectedIssue]);
+
+  const handleSyncToJira = useCallback(() => {
+    if (selectedKanbanIssueId) {
+      jiraSyncStatus.mutate(selectedKanbanIssueId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedKanbanIssueId]);
 
   // Find parent issue if current issue has one
   const parentIssue = useMemo(() => {
@@ -1086,6 +1115,10 @@ export function KanbanIssuePanelContainer({
       }
       onCopyLink={mode === 'edit' ? handleCopyLink : undefined}
       onMoreActions={mode === 'edit' ? handleMoreActions : undefined}
+      onSyncToJira={
+        mode === 'edit' && hasJiraMeta ? handleSyncToJira : undefined
+      }
+      isSyncingToJira={jiraSyncStatus.isPending}
       onPasteFiles={onPasteFiles}
       localAttachments={localAttachments}
       dropzoneProps={{ getRootProps, getInputProps, isDragActive }}
@@ -1108,6 +1141,11 @@ export function KanbanIssuePanelContainer({
       renderCommentsSection={(issueId) => (
         <IssueCommentsSectionContainer issueId={issueId} />
       )}
+      renderJiraSection={
+        mode === 'edit' && hasJiraMeta
+          ? (issueId) => <JiraIssueSectionContainer issueId={issueId} />
+          : undefined
+      }
     />
   );
 }

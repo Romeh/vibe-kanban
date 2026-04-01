@@ -95,3 +95,7 @@ vibe-kanban-cloud/
 *.ts.net.key
 Caddyfile
 Caddyfile.dev
+
+# Internal planning docs
+.claude/**
+.claude

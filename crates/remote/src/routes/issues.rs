@@ -15,6 +15,7 @@ use uuid::Uuid;
 
 use super::{
     error::{ErrorResponse, db_error},
+    jira::sync_jira_status_if_linked,
     organization_members::ensure_project_access,
 };
 use crate::{
@@ -395,6 +396,22 @@ async fn update_issue(
 
     notify_issue_update_changes(&state, organization_id, ctx.user.id, &issue, &data).await;
 
+    // Jira writeback: if status changed and issue is linked to Jira, sync in background.
+    if issue.status_id != data.status_id {
+        let state_clone = state.clone();
+        let issue_clone = data.clone();
+        let new_status_name = ProjectStatusRepository::find_by_id(state.pool(), data.status_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|s| s.name);
+        if let Some(status_name) = new_status_name {
+            tokio::spawn(async move {
+                sync_jira_status_if_linked(&state_clone, &issue_clone, &status_name).await;
+            });
+        }
+    }
+
     Ok(Json(MutationResponse { data, txid }))
 }
 
@@ -575,6 +592,23 @@ async fn bulk_update_issues(
     for (old_issue, new_issue) in &notification_pairs {
         notify_issue_update_changes(&state, organization_id, ctx.user.id, old_issue, new_issue)
             .await;
+
+        // Jira writeback for bulk updates.
+        if old_issue.status_id != new_issue.status_id {
+            let state_clone = state.clone();
+            let issue_clone = new_issue.clone();
+            let new_status_name =
+                ProjectStatusRepository::find_by_id(state.pool(), new_issue.status_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|s| s.name);
+            if let Some(status_name) = new_status_name {
+                tokio::spawn(async move {
+                    sync_jira_status_if_linked(&state_clone, &issue_clone, &status_name).await;
+                });
+            }
+        }
     }
 
     Ok(Json(BulkUpdateIssuesResponse {

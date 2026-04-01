@@ -383,6 +383,7 @@
     "deletedUser": "Deleted User",
     "replyQuotePrefix": "wrote:",
     "moreActions": "More actions",
+    "syncToJira": "Sync status to Jira",
     "closePanel": "Close panel",
     "copyLink": "Copy link",
     "issueTitlePlaceholder": "Issue Title...",

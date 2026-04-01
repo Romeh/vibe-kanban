@@ -4,19 +4,25 @@ use std::time::Duration;
 
 use api_types::{
     AcceptInvitationResponse, AuthMethodsResponse, CreateInvitationRequest,
-    CreateInvitationResponse, CreateIssueAssigneeRequest, CreateIssueRelationshipRequest,
+    CreateInvitationResponse, CreateIssueAssigneeRequest, CreateIssueCommentReactionRequest,
+    CreateIssueCommentRequest, CreateIssueFollowerRequest, CreateIssueRelationshipRequest,
     CreateIssueRequest, CreateIssueTagRequest, CreateOrganizationRequest,
-    CreateOrganizationResponse, CreateWorkspaceRequest, DeleteResponse, DeleteWorkspaceRequest,
+    CreateOrganizationResponse, CreateProjectStatusRequest, CreatePullRequestIssueRequest,
+    CreateTagRequest, CreateWorkspaceRequest, DeleteResponse, DeleteWorkspaceRequest,
     GetInvitationResponse, GetOrganizationResponse, HandoffInitRequest, HandoffInitResponse,
-    HandoffRedeemRequest, HandoffRedeemResponse, Issue, IssueAssignee, IssueRelationship, IssueTag,
-    ListAttachmentsResponse, ListInvitationsResponse, ListIssueAssigneesResponse,
-    ListIssueRelationshipsResponse, ListIssueTagsResponse, ListIssuesResponse, ListMembersResponse,
-    ListOrganizationsResponse, ListProjectStatusesResponse, ListProjectsResponse,
+    HandoffRedeemRequest, HandoffRedeemResponse, Issue, IssueAssignee, IssueComment,
+    IssueCommentReaction, IssueFollower, IssueRelationship, IssueTag, ListAttachmentsResponse,
+    ListInvitationsResponse, ListIssueAssigneesResponse, ListIssueCommentReactionsResponse,
+    ListIssueCommentsResponse, ListIssueFollowersResponse, ListIssueRelationshipsResponse,
+    ListIssueTagsResponse, ListIssuesResponse, ListMembersResponse, ListOrganizationsResponse,
+    ListProjectStatusesResponse, ListProjectsResponse, ListPullRequestIssuesResponse,
     ListPullRequestsResponse, ListTagsResponse, LocalLoginRequest, LocalLoginResponse,
-    MutationResponse, Organization, ProfileResponse, PullRequest, RevokeInvitationRequest,
-    SearchIssuesRequest, Tag, TokenRefreshRequest, TokenRefreshResponse, UpdateIssueRequest,
+    MutationResponse, Organization, ProfileResponse, ProjectStatus, PullRequest, PullRequestIssue,
+    RevokeInvitationRequest, SearchIssuesRequest, Tag, TokenRefreshRequest, TokenRefreshResponse,
+    UpdateIssueCommentReactionRequest, UpdateIssueCommentRequest, UpdateIssueRequest,
     UpdateMemberRoleRequest, UpdateMemberRoleResponse, UpdateOrganizationRequest,
-    UpdatePullRequestApiRequest, UpdateWorkspaceRequest, UpsertPullRequestRequest, Workspace,
+    UpdateProjectStatusRequest, UpdatePullRequestApiRequest, UpdateTagRequest,
+    UpdateWorkspaceRequest, UpsertPullRequestRequest, Workspace,
 };
 use backon::{ExponentialBuilder, Retryable};
 use chrono::Duration as ChronoDuration;
@@ -958,6 +964,30 @@ impl RemoteClient {
             .await
     }
 
+    /// Creates a new project.
+    pub async fn create_project(
+        &self,
+        request: &api_types::CreateProjectRequest,
+    ) -> Result<MutationResponse<api_types::Project>, RemoteClientError> {
+        self.post_authed("/v1/projects", Some(request)).await
+    }
+
+    /// Updates a project.
+    pub async fn update_project(
+        &self,
+        project_id: Uuid,
+        request: &api_types::UpdateProjectRequest,
+    ) -> Result<MutationResponse<api_types::Project>, RemoteClientError> {
+        self.patch_authed(&format!("/v1/projects/{project_id}"), request)
+            .await
+    }
+
+    /// Deletes a project.
+    pub async fn delete_project(&self, project_id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/projects/{project_id}"))
+            .await
+    }
+
     // ── Project Statuses ────────────────────────────────────────────────
 
     /// Lists project statuses for a project (used for status name ↔ UUID mapping).
@@ -966,6 +996,181 @@ impl RemoteClient {
         project_id: Uuid,
     ) -> Result<ListProjectStatusesResponse, RemoteClientError> {
         self.get_authed(&format!("/v1/project_statuses?project_id={project_id}"))
+            .await
+    }
+
+    /// Creates a new project status.
+    pub async fn create_project_status(
+        &self,
+        request: &CreateProjectStatusRequest,
+    ) -> Result<MutationResponse<ProjectStatus>, RemoteClientError> {
+        self.post_authed("/v1/project_statuses", Some(request))
+            .await
+    }
+
+    /// Updates an existing project status.
+    pub async fn update_project_status(
+        &self,
+        id: Uuid,
+        request: &UpdateProjectStatusRequest,
+    ) -> Result<MutationResponse<ProjectStatus>, RemoteClientError> {
+        self.patch_authed(&format!("/v1/project_statuses/{id}"), request)
+            .await
+    }
+
+    /// Deletes a project status.
+    pub async fn delete_project_status(&self, id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/project_statuses/{id}"))
+            .await
+    }
+
+    // ── Tags (mutations) ────────────────────────────────────────────────
+
+    /// Creates a new tag.
+    pub async fn create_tag(
+        &self,
+        request: &CreateTagRequest,
+    ) -> Result<MutationResponse<Tag>, RemoteClientError> {
+        self.post_authed("/v1/tags", Some(request)).await
+    }
+
+    /// Updates an existing tag.
+    pub async fn update_tag(
+        &self,
+        id: Uuid,
+        request: &UpdateTagRequest,
+    ) -> Result<MutationResponse<Tag>, RemoteClientError> {
+        self.patch_authed(&format!("/v1/tags/{id}"), request).await
+    }
+
+    /// Deletes a tag.
+    pub async fn delete_tag(&self, id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/tags/{id}")).await
+    }
+
+    // ── Issue Comments ──────────────────────────────────────────────────
+
+    /// Lists comments for an issue.
+    pub async fn list_issue_comments(
+        &self,
+        issue_id: Uuid,
+    ) -> Result<ListIssueCommentsResponse, RemoteClientError> {
+        self.get_authed(&format!("/v1/issue_comments?issue_id={issue_id}"))
+            .await
+    }
+
+    /// Creates a new issue comment.
+    pub async fn create_issue_comment(
+        &self,
+        request: &CreateIssueCommentRequest,
+    ) -> Result<MutationResponse<IssueComment>, RemoteClientError> {
+        self.post_authed("/v1/issue_comments", Some(request)).await
+    }
+
+    /// Updates an existing issue comment.
+    pub async fn update_issue_comment(
+        &self,
+        id: Uuid,
+        request: &UpdateIssueCommentRequest,
+    ) -> Result<MutationResponse<IssueComment>, RemoteClientError> {
+        self.patch_authed(&format!("/v1/issue_comments/{id}"), request)
+            .await
+    }
+
+    /// Deletes an issue comment.
+    pub async fn delete_issue_comment(&self, id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/issue_comments/{id}"))
+            .await
+    }
+
+    // ── Issue Followers ─────────────────────────────────────────────────
+
+    /// Lists followers for an issue.
+    pub async fn list_issue_followers(
+        &self,
+        issue_id: Uuid,
+    ) -> Result<ListIssueFollowersResponse, RemoteClientError> {
+        self.get_authed(&format!("/v1/issue_followers?issue_id={issue_id}"))
+            .await
+    }
+
+    /// Creates a new issue follower.
+    pub async fn create_issue_follower(
+        &self,
+        request: &CreateIssueFollowerRequest,
+    ) -> Result<MutationResponse<IssueFollower>, RemoteClientError> {
+        self.post_authed("/v1/issue_followers", Some(request)).await
+    }
+
+    /// Deletes an issue follower.
+    pub async fn delete_issue_follower(&self, id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/issue_followers/{id}"))
+            .await
+    }
+
+    // ── Issue Comment Reactions ─────────────────────────────────────────
+
+    /// Lists reactions for an issue comment.
+    pub async fn list_issue_comment_reactions(
+        &self,
+        comment_id: Uuid,
+    ) -> Result<ListIssueCommentReactionsResponse, RemoteClientError> {
+        self.get_authed(&format!(
+            "/v1/issue_comment_reactions?comment_id={comment_id}"
+        ))
+        .await
+    }
+
+    /// Creates a new issue comment reaction.
+    pub async fn create_issue_comment_reaction(
+        &self,
+        request: &CreateIssueCommentReactionRequest,
+    ) -> Result<MutationResponse<IssueCommentReaction>, RemoteClientError> {
+        self.post_authed("/v1/issue_comment_reactions", Some(request))
+            .await
+    }
+
+    /// Updates an issue comment reaction.
+    pub async fn update_issue_comment_reaction(
+        &self,
+        id: Uuid,
+        request: &UpdateIssueCommentReactionRequest,
+    ) -> Result<MutationResponse<IssueCommentReaction>, RemoteClientError> {
+        self.patch_authed(&format!("/v1/issue_comment_reactions/{id}"), request)
+            .await
+    }
+
+    /// Deletes an issue comment reaction.
+    pub async fn delete_issue_comment_reaction(&self, id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/issue_comment_reactions/{id}"))
+            .await
+    }
+
+    // ── Pull Request Issues ─────────────────────────────────────────────
+
+    /// Lists pull request issue links for a pull request.
+    pub async fn list_pull_request_issues(
+        &self,
+        pull_request_id: Uuid,
+    ) -> Result<ListPullRequestIssuesResponse, RemoteClientError> {
+        self.get_authed(&format!(
+            "/v1/pull_request_issues?pull_request_id={pull_request_id}"
+        ))
+        .await
+    }
+
+    /// Creates a new pull request issue link.
+    pub async fn create_pull_request_issue(
+        &self,
+        request: &CreatePullRequestIssueRequest,
+    ) -> Result<MutationResponse<PullRequestIssue>, RemoteClientError> {
+        self.post_authed("/v1/pull_request_issues", Some(request))
+            .await
+    }
+
+    /// Deletes a pull request issue link.
+    pub async fn delete_pull_request_issue(&self, id: Uuid) -> Result<(), RemoteClientError> {
+        self.delete_authed(&format!("/v1/pull_request_issues/{id}"))
             .await
     }
 
