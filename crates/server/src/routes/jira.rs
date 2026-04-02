@@ -338,6 +338,19 @@ async fn import_issues(
     }
 
     let client = build_jira_client(&deployment).await?;
+
+    // Discover the custom field ID for "Acceptance Criteria" (varies per Jira instance).
+    let ac_field_id = match client.get_field_ids().await {
+        Ok(fields) => fields.get("acceptance criteria").cloned(),
+        Err(e) => {
+            tracing::debug!(
+                ?e,
+                "could not fetch field definitions, skipping acceptance criteria"
+            );
+            None
+        }
+    };
+
     let mut results = Vec::with_capacity(keys_to_import.len());
 
     for issue_key in &keys_to_import {
@@ -358,11 +371,29 @@ async fn import_issues(
             .as_ref()
             .and_then(|p| map_jira_priority(&p.name));
 
-        let description = jira_issue
+        let mut description = jira_issue
             .fields
             .description
             .as_ref()
             .map(|d| adf_to_markdown(d));
+
+        // Append acceptance criteria if present.
+        if let Some(ref ac_id) = ac_field_id {
+            if let Some(ac_value) = jira_issue.fields.extra.get(ac_id) {
+                if !ac_value.is_null() {
+                    let ac_md = adf_to_markdown(ac_value);
+                    let ac_md = ac_md.trim();
+                    if !ac_md.is_empty() {
+                        let desc = description.get_or_insert_with(String::new);
+                        if !desc.is_empty() {
+                            desc.push_str("\n\n");
+                        }
+                        desc.push_str("## Acceptance Criteria\n\n");
+                        desc.push_str(ac_md);
+                    }
+                }
+            }
+        }
 
         let jira_url = format!("{}/browse/{}", client.site_url(), jira_issue.key);
         let jira_project_key = jira_issue.key.split('-').next().unwrap_or("").to_string();

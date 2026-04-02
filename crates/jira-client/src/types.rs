@@ -40,6 +40,10 @@ pub struct JiraIssueFields {
     pub updated: Option<String>,
     #[serde(default)]
     pub labels: Vec<String>,
+    /// Catch-all for custom fields (e.g. acceptance criteria, story points).
+    #[serde(flatten)]
+    #[ts(skip)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
