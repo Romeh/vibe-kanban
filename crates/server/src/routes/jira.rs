@@ -84,6 +84,36 @@ fn map_jira_priority(name: &str) -> Option<IssuePriority> {
     }
 }
 
+/// Score how well a Jira status name matches the canonical meaning of a
+/// category key. Lower is better; 0 = canonical name, u8::MAX = no match signal.
+fn transition_category_priority(status_name: &str, category_key: &str) -> u8 {
+    let name = status_name.to_lowercase();
+    match category_key {
+        "new" => {
+            if name.contains("to do") || name == "open" || name == "backlog" {
+                0
+            } else {
+                100
+            }
+        }
+        "done" => {
+            if name == "done" || name == "closed" || name == "resolved" {
+                0
+            } else {
+                100
+            }
+        }
+        "indeterminate" => {
+            if name.contains("in progress") || name.contains("in review") {
+                0
+            } else {
+                100
+            }
+        }
+        _ => 100,
+    }
+}
+
 fn map_status_to_jira_category(status_name: &str) -> Option<&'static str> {
     match status_name.to_lowercase().as_str() {
         "done" | "cancelled" | "canceled" => Some("done"),
@@ -399,12 +429,24 @@ async fn import_issues(
         let jira_project_key = jira_issue.key.split('-').next().unwrap_or("").to_string();
 
         // Cache available Jira transitions for status writeback.
+        // When multiple transitions share the same category, prefer the one
+        // whose target status name looks like the canonical status for that
+        // category (e.g. "To Do" for "new", "Done" for "done", "In Progress"
+        // for "indeterminate") so we don't accidentally pick "Blocked" over
+        // "To Do".
         let cached_transitions = match client.get_transitions(&jira_issue.key).await {
             Ok(transitions) => {
                 let mut map = serde_json::Map::new();
+                let mut priority: std::collections::HashMap<String, u8> =
+                    std::collections::HashMap::new();
                 for t in &transitions {
                     if let Some(ref cat) = t.to.status_category {
-                        map.insert(cat.key.clone(), json!(t.id));
+                        let p = transition_category_priority(&t.to.name, &cat.key);
+                        let prev = priority.get(&cat.key).copied().unwrap_or(u8::MAX);
+                        if p <= prev {
+                            map.insert(cat.key.clone(), json!(t.id));
+                            priority.insert(cat.key.clone(), p);
+                        }
                     }
                 }
                 json!(map)
@@ -528,12 +570,17 @@ async fn manual_sync_status(
         (cached_id, format!("cached:{target_category}"))
     } else {
         let transitions = client.get_transitions(&issue_key).await?;
-        let matching = transitions.iter().find(|t| {
-            t.to.status_category
-                .as_ref()
-                .is_some_and(|cat| cat.key == target_category)
-        });
-        match matching {
+        let mut candidates: Vec<_> = transitions
+            .iter()
+            .filter(|t| {
+                t.to.status_category
+                    .as_ref()
+                    .is_some_and(|cat| cat.key == target_category)
+            })
+            .collect();
+        // Sort by priority so canonical names (e.g. "To Do") come first.
+        candidates.sort_by_key(|t| transition_category_priority(&t.to.name, target_category));
+        match candidates.first() {
             Some(t) => (t.id.clone(), t.name.clone()),
             None => {
                 tracing::debug!(
