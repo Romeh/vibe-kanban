@@ -300,6 +300,24 @@ pub async fn create_and_start_workspace(
         .start_workspace(&workspace, executor_config.clone(), workspace_prompt)
         .await?;
 
+    // Auto-transition linked Jira issue to "In Progress" on first workspace start.
+    if let Some(linked_issue) = &linked_issue {
+        let pool = deployment.db().pool.clone();
+        let issue_id = linked_issue.issue_id;
+        let deployment_clone = deployment.clone();
+        tokio::spawn(async move {
+            if let Err(e) = crate::routes::jira::auto_transition_to_in_progress(
+                &deployment_clone,
+                &pool,
+                issue_id,
+            )
+            .await
+            {
+                tracing::warn!(?e, %issue_id, "failed to auto-transition Jira to In Progress");
+            }
+        });
+    }
+
     deployment
         .track_if_analytics_allowed(
             "workspace_created_and_started",

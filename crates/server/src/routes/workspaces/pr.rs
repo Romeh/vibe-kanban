@@ -287,9 +287,33 @@ pub async fn create_pr(
 
     let provider = git_host.provider_kind();
 
+    // Prepend Jira issue key to PR title if the workspace is linked to a Jira issue.
+    let pr_title = {
+        let mut title = request.title.clone();
+        if let Ok(Some(issue_id)) =
+            Workspace::get_linked_issue_id(pool, workspace.id).await
+        {
+            if let Ok(Some(issue)) =
+                db::models::local_issue::LocalIssue::find_by_id(pool, issue_id).await
+            {
+                if let Some(jira_key) = issue
+                    .extension_metadata
+                    .get("jira")
+                    .and_then(|j| j.get("issue_key"))
+                    .and_then(|v| v.as_str())
+                {
+                    if !title.starts_with(jira_key) {
+                        title = format!("{jira_key}: {title}");
+                    }
+                }
+            }
+        }
+        title
+    };
+
     // Create the PR
     let pr_request = CreatePrRequest {
-        title: request.title.clone(),
+        title: pr_title,
         body: request.body.clone(),
         head_branch: workspace.branch.clone(),
         base_branch: base_branch.clone(),

@@ -7,9 +7,11 @@ use axum::{
     routing::{delete, get, post},
 };
 use db::models::{
+    issue_tag::IssueTag,
     jira::{JiraConnectionRow, StatusMappingRow},
     local_issue::LocalIssue,
     project_status::LocalProjectStatus,
+    project_tag::ProjectTag,
     task::Task,
 };
 use deployment::Deployment;
@@ -489,10 +491,123 @@ async fn import_issues(
         )
         .await?;
 
+        // Import Jira labels as VK tags.
+        for label in &jira_issue.fields.labels {
+            let label = label.trim();
+            if label.is_empty() {
+                continue;
+            }
+            match ProjectTag::find_or_create_by_name(pool, payload.project_id, label).await {
+                Ok(tag) => {
+                    if let Err(e) = IssueTag::create(pool, issue.id, tag.id).await {
+                        tracing::debug!(?e, %label, "issue tag may already exist, skipping");
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(?e, %label, "failed to create tag from Jira label");
+                }
+            }
+        }
+
         results.push(issue);
     }
 
     Ok(ResponseJson(ApiResponse::success(results)))
+}
+
+// ---------------------------------------------------------------------------
+// Auto-transition helpers (called from other routes)
+// ---------------------------------------------------------------------------
+
+/// Transition a Jira-linked issue to "In Progress" when a workspace starts.
+/// Skips if the issue is not linked to Jira or is already in the "indeterminate"
+/// (In Progress) category.
+pub async fn auto_transition_to_in_progress(
+    deployment: &DeploymentImpl,
+    pool: &sqlx::SqlitePool,
+    issue_id: uuid::Uuid,
+) -> Result<(), ApiError> {
+    let issue = LocalIssue::find_by_id(pool, issue_id).await?;
+    let issue = match issue {
+        Some(i) => i,
+        None => return Ok(()),
+    };
+
+    let jira_meta = match issue.extension_metadata.get("jira") {
+        Some(j) => j,
+        None => return Ok(()), // Not a Jira issue
+    };
+
+    let issue_key = jira_meta
+        .get("issue_key")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::BadRequest("No Jira issue key".into()))?;
+
+    // Skip if already in progress (check cached status).
+    let cached_status = jira_meta
+        .get("jira_status")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let cached_lower = cached_status.to_lowercase();
+    if cached_lower.contains("progress") || cached_lower.contains("review") {
+        tracing::debug!(%issue_key, %cached_status, "already in progress, skipping auto-transition");
+        return Ok(());
+    }
+
+    let client = build_jira_client(deployment).await?;
+
+    // Try cached transition first.
+    let target_category = "indeterminate";
+    let cached_transition_id = jira_meta
+        .get("transitions")
+        .and_then(|t| t.get(target_category))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let transition_id = if let Some(cached_id) = cached_transition_id {
+        cached_id
+    } else {
+        let transitions = client.get_transitions(issue_key).await?;
+        let mut candidates: Vec<_> = transitions
+            .iter()
+            .filter(|t| {
+                t.to.status_category
+                    .as_ref()
+                    .is_some_and(|cat| cat.key == target_category)
+            })
+            .collect();
+        candidates.sort_by_key(|t| transition_category_priority(&t.to.name, target_category));
+        match candidates.first() {
+            Some(t) => t.id.clone(),
+            None => {
+                tracing::debug!(%issue_key, "no In Progress transition available");
+                return Ok(());
+            }
+        }
+    };
+
+    match client.transition_issue(issue_key, &transition_id).await {
+        Ok(()) => {
+            tracing::info!(%issue_key, "auto-transitioned Jira to In Progress");
+            let now = chrono::Utc::now().to_rfc3339();
+            update_jira_metadata(
+                pool,
+                issue_id,
+                &issue.extension_metadata,
+                &[
+                    ("last_synced_at", serde_json::json!(now)),
+                    ("jira_status", serde_json::json!("In Progress")),
+                ],
+                true,
+            )
+            .await;
+        }
+        Err(e) => {
+            tracing::warn!(?e, %issue_key, "auto-transition to In Progress failed");
+        }
+    }
+
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -844,4 +959,131 @@ async fn oauth_authorize_stub() -> Result<ResponseJson<JiraOAuthAuthorizeRespons
     Err(ApiError::BadRequest(
         "OAuth is not supported in local mode. Use API token authentication.".into(),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- is_issue_key ---------------------------------------------------------
+
+    #[test]
+    fn valid_issue_keys() {
+        assert!(is_issue_key("TES-7"));
+        assert!(is_issue_key("PROJ-123"));
+        assert!(is_issue_key("AB-1"));
+    }
+
+    #[test]
+    fn invalid_issue_keys() {
+        assert!(!is_issue_key(""));
+        assert!(!is_issue_key("TES"));
+        assert!(!is_issue_key("TES-"));
+        assert!(!is_issue_key("-7"));
+        assert!(!is_issue_key("tes-7")); // lowercase prefix
+        assert!(!is_issue_key("TES-abc"));
+        assert!(!is_issue_key("123-456"));
+    }
+
+    // -- map_jira_priority ----------------------------------------------------
+
+    #[test]
+    fn priority_mapping() {
+        assert_eq!(map_jira_priority("Highest"), Some(IssuePriority::Urgent));
+        assert_eq!(map_jira_priority("Blocker"), Some(IssuePriority::Urgent));
+        assert_eq!(map_jira_priority("High"), Some(IssuePriority::High));
+        assert_eq!(map_jira_priority("Critical"), Some(IssuePriority::High));
+        assert_eq!(map_jira_priority("Medium"), Some(IssuePriority::Medium));
+        assert_eq!(map_jira_priority("Low"), Some(IssuePriority::Low));
+        assert_eq!(map_jira_priority("Lowest"), Some(IssuePriority::Low));
+        assert_eq!(map_jira_priority("Trivial"), Some(IssuePriority::Low));
+        assert_eq!(map_jira_priority("Unknown"), None);
+    }
+
+    #[test]
+    fn priority_mapping_case_insensitive() {
+        assert_eq!(map_jira_priority("highest"), Some(IssuePriority::Urgent));
+        assert_eq!(map_jira_priority("HIGH"), Some(IssuePriority::High));
+        assert_eq!(map_jira_priority("medium"), Some(IssuePriority::Medium));
+    }
+
+    // -- map_status_to_jira_category ------------------------------------------
+
+    #[test]
+    fn status_category_done() {
+        assert_eq!(map_status_to_jira_category("done"), Some("done"));
+        assert_eq!(map_status_to_jira_category("Done"), Some("done"));
+        assert_eq!(map_status_to_jira_category("cancelled"), Some("done"));
+        assert_eq!(map_status_to_jira_category("canceled"), Some("done"));
+    }
+
+    #[test]
+    fn status_category_in_progress() {
+        assert_eq!(
+            map_status_to_jira_category("inprogress"),
+            Some("indeterminate")
+        );
+        assert_eq!(
+            map_status_to_jira_category("In Progress"),
+            Some("indeterminate")
+        );
+        assert_eq!(
+            map_status_to_jira_category("in_progress"),
+            Some("indeterminate")
+        );
+        assert_eq!(
+            map_status_to_jira_category("In Review"),
+            Some("indeterminate")
+        );
+    }
+
+    #[test]
+    fn status_category_new() {
+        assert_eq!(map_status_to_jira_category("todo"), Some("new"));
+        assert_eq!(map_status_to_jira_category("To Do"), Some("new"));
+        assert_eq!(map_status_to_jira_category("backlog"), Some("new"));
+    }
+
+    #[test]
+    fn status_category_unknown() {
+        assert_eq!(map_status_to_jira_category("random"), None);
+        assert_eq!(map_status_to_jira_category("blocked"), None);
+    }
+
+    // -- transition_category_priority -----------------------------------------
+
+    #[test]
+    fn priority_prefers_canonical_new() {
+        assert!(transition_category_priority("To Do", "new") < transition_category_priority("Blocked", "new"));
+        assert_eq!(transition_category_priority("Open", "new"), 0);
+        assert_eq!(transition_category_priority("Backlog", "new"), 0);
+    }
+
+    #[test]
+    fn priority_prefers_canonical_done() {
+        assert!(transition_category_priority("Done", "done") < transition_category_priority("Won't Do", "done"));
+        assert_eq!(transition_category_priority("Closed", "done"), 0);
+        assert_eq!(transition_category_priority("Resolved", "done"), 0);
+    }
+
+    #[test]
+    fn priority_prefers_canonical_indeterminate() {
+        assert!(
+            transition_category_priority("In Progress", "indeterminate")
+                < transition_category_priority("Blocked", "indeterminate")
+        );
+        assert_eq!(
+            transition_category_priority("In Review", "indeterminate"),
+            0
+        );
+    }
+
+    #[test]
+    fn priority_unknown_category_returns_100() {
+        assert_eq!(transition_category_priority("Anything", "custom"), 100);
+    }
 }

@@ -614,6 +614,20 @@ impl Workspace {
         Ok(())
     }
 
+    /// Get the linked issue ID for a workspace (local mode).
+    pub async fn get_linked_issue_id(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+    ) -> Result<Option<Uuid>, sqlx::Error> {
+        let row: Option<(Uuid,)> = sqlx::query_as(
+            "SELECT issue_id FROM workspaces WHERE id = $1 AND issue_id IS NOT NULL",
+        )
+        .bind(workspace_id)
+        .fetch_optional(pool)
+        .await?;
+        Ok(row.map(|r| r.0))
+    }
+
     /// Delete a workspace by ID
     pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<u64, sqlx::Error> {
         let result = sqlx::query!("DELETE FROM workspaces WHERE id = $1", id)
